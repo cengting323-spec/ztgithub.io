@@ -13,6 +13,140 @@
         constructor() {
             this.inventory = { ...defaultInventory };
             this.loadFromStorage();
+            this.isPhoneVisible = false; // 跟踪手机界面状态
+        }
+
+        // === 新增的方法：创建悬浮按钮 ===
+        createFloatingButton() {
+            // 移除已存在的悬浮按钮
+            const existingButton = document.getElementById('floatingAppleButton');
+            if (existingButton) existingButton.remove();
+
+            const floatingButton = document.createElement('div');
+            floatingButton.id = 'floatingAppleButton';
+            floatingButton.className = 'floating-apple-button';
+            floatingButton.innerHTML = '🍎';
+            floatingButton.onclick = () => this.togglePhoneInterface();
+            
+            document.body.appendChild(floatingButton);
+        }
+
+        // === 新增的方法：创建手机主界面 ===
+        createPhoneInterface() {
+            // 移除已存在的界面
+            const existingOverlay = document.getElementById('phoneOverlay');
+            const existingContainer = document.getElementById('phoneMainContainer');
+            if (existingOverlay) existingOverlay.remove();
+            if (existingContainer) existingContainer.remove();
+
+            // 创建遮罩
+            const overlay = document.createElement('div');
+            overlay.id = 'phoneOverlay';
+            overlay.className = 'phone-overlay';
+            overlay.onclick = () => this.togglePhoneInterface();
+            
+            // 创建手机主容器
+            const phoneContainer = document.createElement('div');
+            phoneContainer.id = 'phoneMainContainer';
+            phoneContainer.className = 'phone-main-container';
+
+            // 手机界面内容
+            phoneContainer.innerHTML = `
+                <button class="phone-close-button" onclick="window.apocalypseMobileInventory.togglePhoneInterface()">×</button>
+                <div class="phone-header">
+                    <h3>📱 末日生存系统</h3>
+                </div>
+                <div class="phone-content" id="phoneInventoryContent">
+                    <!-- 物资状态栏将显示在这里 -->
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+            document.body.appendChild(phoneContainer);
+        }
+
+        // === 新增的方法：切换手机界面显示/隐藏 ===
+        togglePhoneInterface() {
+            const overlay = document.getElementById('phoneOverlay');
+            const phoneContainer = document.getElementById('phoneMainContainer');
+            const contentArea = document.getElementById('phoneInventoryContent');
+            
+            this.isPhoneVisible = !this.isPhoneVisible;
+            
+            if (this.isPhoneVisible) {
+                // 显示手机界面时，重新渲染物资状态栏到手机内容区
+                this.renderInventoryToPhone(contentArea);
+                overlay.classList.add('active');
+                phoneContainer.classList.add('active');
+            } else {
+                // 隐藏手机界面
+                overlay.classList.remove('active');
+                phoneContainer.classList.remove('active');
+            }
+        }
+
+        // === 新增的方法：在手机界面内渲染物资状态 ===
+        renderInventoryToPhone(container) {
+            // 清空容器
+            container.innerHTML = '';
+            
+            // 创建物资状态栏（复用之前的渲染逻辑，但稍作调整）
+            for (const [key, item] of Object.entries(this.inventory)) {
+                const percentage = (item.value / item.max) * 100;
+                let statusClass = 'status-high';
+                if (percentage < 50) statusClass = 'status-medium';
+                if (percentage < 25) statusClass = 'status-low';
+                if (percentage < 10) statusClass = 'status-critical';
+
+                const itemElement = document.createElement('div');
+                itemElement.className = 'inventory-item';
+                itemElement.innerHTML = `
+                    <div class="item-header">
+                        <span class="item-name">${item.name}</span>
+                        <span class="item-value">${item.value} ${item.unit}</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-fill ${statusClass}" style="width: ${percentage}%"></div>
+                    </div>
+                    <div class="item-controls">
+                        <button class="btn-decrease" data-key="${key}">-</button>
+                        <button class="btn-increase" data-key="${key}">+</button>
+                    </div>
+                `;
+                container.appendChild(itemElement);
+            }
+
+            // 添加重置按钮
+            const resetButton = document.createElement('button');
+            resetButton.textContent = '重置所有物资';
+            resetButton.className = 'reset-button';
+            resetButton.onclick = () => {
+                this.resetInventory();
+                this.renderInventoryToPhone(container); // 刷新手机界面内的显示
+            };
+            container.appendChild(resetButton);
+
+            // 绑定手机界面内按钮的事件
+            this.bindPhoneEvents(container);
+        }
+
+        // === 新增的方法：绑定手机界面内按钮事件 ===
+        bindPhoneEvents(container) {
+            container.querySelectorAll('.btn-decrease').forEach(btn => {
+                btn.onclick = (e) => {
+                    const key = e.target.dataset.key;
+                    this.updateItem(key, -1);
+                    this.renderInventoryToPhone(document.getElementById('phoneInventoryContent'));
+                };
+            });
+
+            container.querySelectorAll('.btn-increase').forEach(btn => {
+                btn.onclick = (e) => {
+                    const key = e.target.dataset.key;
+                    this.updateItem(key, 1);
+                    this.renderInventoryToPhone(document.getElementById('phoneInventoryContent'));
+                };
+            });
         }
 
         loadFromStorage() {
@@ -39,110 +173,35 @@
                 this.inventory[key].value += change;
                 this.inventory[key].value = Math.max(0, Math.min(this.inventory[key].value, this.inventory[key].max));
                 this.saveToStorage();
-                this.render();
+                // 如果手机界面是打开的，更新显示
+                if (this.isPhoneVisible) {
+                    this.renderInventoryToPhone(document.getElementById('phoneInventoryContent'));
+                }
             }
         }
 
         resetInventory() {
             this.inventory = { ...defaultInventory };
             this.saveToStorage();
-            this.render();
+            // 如果手机界面是打开的，更新显示
+            if (this.isPhoneVisible) {
+                this.renderInventoryToPhone(document.getElementById('phoneInventoryContent'));
+            }
         }
 
         render() {
-            // 移除已存在的容器
+            // 先创建悬浮按钮和手机主界面
+            this.createFloatingButton();
+            this.createPhoneInterface();
+            
+            // 移除原有的侧边栏状态栏（我们不再需要它常驻显示）
             const existingContainer = document.getElementById('apocalypseMobileInventoryContainer');
             if (existingContainer) {
                 existingContainer.remove();
             }
-
-            // 创建主容器 - 像你创建snowflake那样创建元素
-            const container = document.createElement('div');
-            container.id = 'apocalypseMobileInventoryContainer';
-            container.className = 'apocalypse-inventory-container';
-
-            // 创建标题
-            const title = document.createElement('h3');
-            title.textContent = '📱 物资状态';
-            container.appendChild(title);
-
-            // 为每个物资创建显示项 - 模仿你的UI结构
-            for (const [key, item] of Object.entries(this.inventory)) {
-                const percentage = (item.value / item.max) * 100;
-                let statusClass = 'status-high';
-                if (percentage < 50) statusClass = 'status-medium';
-                if (percentage < 25) statusClass = 'status-low';
-                if (percentage < 10) statusClass = 'status-critical';
-
-                // 创建物资项容器
-                const itemElement = document.createElement('div');
-                itemElement.className = 'inventory-item';
-
-                // 使用innerHTML来设置内容，就像你在音乐界面做的那样
-                itemElement.innerHTML = `
-                    <div class="item-header">
-                        <span class="item-name">${item.name}</span>
-                        <span class="item-value">${item.value} ${item.unit}</span>
-                    </div>
-                    <div class="progress-bar">
-                        <div class="progress-fill ${statusClass}" style="width: ${percentage}%"></div>
-                    </div>
-                    <div class="item-controls">
-                        <button class="btn-decrease" data-key="${key}">-</button>
-                        <button class="btn-increase" data-key="${key}">+</button>
-                    </div>
-                `;
-
-                container.appendChild(itemElement);
-            }
-
-            // 创建重置按钮
-            const resetButton = document.createElement('button');
-            resetButton.textContent = '重置所有物资';
-            resetButton.className = 'reset-button';
-            resetButton.onclick = () => this.resetInventory();
-            container.appendChild(resetButton);
-
-            // 将容器插入到页面中 - 寻找合适的位置
-            this.insertIntoPage(container);
-
-            // 绑定按钮事件
-            this.bindEvents(container);
-        }
-
-        insertIntoPage(container) {
-            // 尝试插入到角色卡区域之后
-            const characterBlock = document.querySelector('.character-block');
-            if (characterBlock) {
-                characterBlock.after(container);
-            } else {
-                // 备用方案：插入到聊天容器附近
-                const chatContainer = document.querySelector('#chat-container');
-                if (chatContainer) {
-                    chatContainer.before(container);
-                } else {
-                    // 最后方案：插入到body开头
-                    document.body.insertBefore(container, document.body.firstChild);
-                }
-            }
-        }
-
-        bindEvents(container) {
-            // 绑定减少按钮事件
-            container.querySelectorAll('.btn-decrease').forEach(btn => {
-                btn.onclick = (e) => {
-                    const key = e.target.dataset.key;
-                    this.updateItem(key, -1);
-                };
-            });
-
-            // 绑定增加按钮事件
-            container.querySelectorAll('.btn-increase').forEach(btn => {
-                btn.onclick = (e) => {
-                    const key = e.target.dataset.key;
-                    this.updateItem(key, 1);
-                };
-            });
+            
+            // 注意：我们不再创建常驻的状态栏，而是只在手机界面内显示
+            console.log('📱 末世手机物资状态栏插件已加载！悬浮按钮已创建。');
         }
     }
 
